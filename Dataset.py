@@ -23,6 +23,8 @@ class UCF101(Dataset):
         self.img_rows = 224
         self.img_cols = 224
         self.num_label = 101
+        self.sample_num = 10
+        self.random_sample_key = 666
         # self.transform = transform
 
         if download:
@@ -67,6 +69,12 @@ class UCF101(Dataset):
         # if self.transform:
         #     sample = self.transform(sample)
         optical_frames["orig"] = [np.transpose(optical_frame, (2, 0, 1)) for optical_frame in optical_frames["orig"]]
+
+        # random sample
+        for keys in optical_frames.keys():
+            optical_frames[keys] = random_sample(optical_frames[keys], N=self.sample_num, seed=self.random_sample_key)
+            optical_frames[keys] = un_roll_timestep(optical_frames[keys]) --------------------------------------------------------------non-implemented
+
         input_data = optical_frames
 
         return input_data
@@ -134,7 +142,7 @@ def get_frames(video_path, resize_img_rows, resize_img_cols):
     return frames
 
 
-def random_sample(frames, N=10):
+def random_sample(frames, N=10, seed=None):
     """
     randomly choose several frames to be the representation of this video
     :param frames:
@@ -146,6 +154,8 @@ def random_sample(frames, N=10):
 
     # randomly choose N frames to be the representation of this video
     N_list = np.arange(nb_frame)
+    if seed:
+        random.seed(seed)
     random.shuffle(N_list)
     N_list = sorted(N_list[: N])
 
