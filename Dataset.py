@@ -71,9 +71,9 @@ class UCF101(Dataset):
 
             sample = {'input': self.get_input_data(video_path), 'label': label}
         else:
-            video_path = os.path.join(self.video_dir, self.test_list[index].replace('\n', '').split(' ')[0])
+            video_path = os.path.join(self.video_dir, self.test_list[index].replace('\n', ''))
             class_name = self.test_list[index].split('/')[0]
-            label = int(self.classInd[class_name])
+            label = int(self.classInd[class_name]) - 1  # start from 0
 
             sample = {'input': self.get_input_data(video_path), 'label': label}
 

@@ -8,7 +8,6 @@ from Model import CreateModel
 model_path = os.path.abspath("./checkpoint/InceptionV3_UCF.pt")
 
 ucf101_dataset = UCF101(sample_num=1)
-dataloader = DataLoader(ucf101_dataset, batch_size=8, shuffle=True, num_workers=5)
 
 use_cuda = True
 if use_cuda:
@@ -18,7 +17,8 @@ device = torch.device("cuda" if use_cuda else "cpu")
 
 model = CreateModel(device, in_channels=3, num_labels=101)
 
-# model.train(dataloader, device, num_epoch=1, display_freq=500, model_path=model_path)
+dataloader = DataLoader(ucf101_dataset, batch_size=8, shuffle=True, num_workers=5)
+model.train(dataloader, device, num_epoch=15, display_freq=500, model_path=model_path)
 
 # test
 print("---------- test ------------")
