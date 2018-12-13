@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 from torchvision import models
@@ -49,7 +50,7 @@ class NonLocalNetwork(torch.nn.Module):
         )
 
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(in_features=128*3*3, out_features=256),
+            torch.nn.Linear(in_features=128*28*28, out_features=256),
             torch.nn.ReLU(),
             torch.nn.Dropout(0.5),
 
@@ -63,31 +64,73 @@ class NonLocalNetwork(torch.nn.Module):
         return output
 
 
-class CreateModel(object):
-    def __init__(self, device, in_channels, num_labels):
-        # vgg16 model
+class VGG16(torch.nn.Module):
+    def __init__(self, num_labels, pretrained):
+        super(VGG16, self).__init__()
+
+        self.module = models.vgg16(pretrained=pretrained)
+        for parma in self.module.parameters():
+            parma.requires_grad = False
+        self.module.classifier = torch.nn.Sequential(torch.nn.Linear(25088, 4096),
+                                                     torch.nn.ReLU(),
+                                                     torch.nn.Dropout(p=0.5),
+                                                     torch.nn.Linear(4096, 4096),
+                                                     torch.nn.ReLU(),
+                                                     torch.nn.Dropout(p=0.5),
+                                                     torch.nn.Linear(4096, num_labels))
+
+    def forward(self, x):
+        output = self.module(x)
+        return output
+
+
+class InceptionV3(torch.nn.Module):
+    def __init__(self, num_labels, pretrained):
         """
-        # self.model = models.vgg16(pretrained=True)
-        # for parma in self.model.parameters():
-        #     parma.requires_grad = False
-        # self.model.classifier = torch.nn.Sequential(torch.nn.Linear(25088, 4096),
-        #                                             torch.nn.ReLU(),
-        #                                             torch.nn.Dropout(p=0.5),
-        #                                             torch.nn.Linear(4096, 4096),
-        #                                             torch.nn.ReLU(),
-        #                                             torch.nn.Dropout(p=0.5),
-        #                                             torch.nn.Linear(4096, 101))
-        # self.optim_params = self.model.classifier.parameters()
+
+        :param num_labels: number of classes
+        :param pretrained: using pretrained model or not
+        :param num_freeze: number of layers to freeze
+        """
+        super(InceptionV3, self).__init__()
+
+        self.module = models.inception_v3(pretrained=pretrained)
+
+        # freeze several layers
+        for parma in self.module.parameters():
+            parma.requires_grad = False
+
+        # replace the last layer
+        self.module.aux_logits = False
+        self.module.fc = torch.nn.Linear(self.module.fc.in_features, num_labels)
+
+    def forward(self, x):
+        x = self.module(x)
+        return x
+
+
+class CreateModel(object):
+    def __init__(self, device, num_labels, in_channels=3):
+        # vgg16 model(model for image)
+        """
+        self.model = VGG16(num_labels=num_labels, pretrained=True)
+        self.optim_params = self.model.module.classifier.parameters()
+        # """
+
+        # inception model(model for image)
+        # """
+        self.model = InceptionV3(num_labels=num_labels, pretrained=True)
+        self.optim_params = self.model.module.fc.parameters()
         # """
 
         # small model for testing
         """
-        # self.model = TestNet()
-        # self.optim_params = self.model.parameters()
+        self.model = TestNet()
+        self.optim_params = self.model.parameters()
         # """
 
-        # Non-local Neural Network
-        # """
+        # Non-local Neural Network(model for video)
+        """
         self.model = NonLocalNetwork(in_channels=in_channels, num_labels=num_labels)
         self.optim_params = self.model.parameters()
         # """
@@ -96,7 +139,7 @@ class CreateModel(object):
         self.loss_func = torch.nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.optim_params)
 
-    def train(self, dataloader, device, num_epoch):
+    def train(self, dataloader, device, num_epoch, display_freq, model_path=None):
         """
 
         :param dataloader: pytorch pipeline
@@ -104,13 +147,17 @@ class CreateModel(object):
         :param use_gpu:
         :return:
         """
+        model_dir, model_name = model_path[:model_path.rindex('/')], model_path[model_path.rindex('/')+1:]
         self.model.train()
 
         for epoch_idx in range(num_epoch):
+            print("EPOCH %d" % (epoch_idx+1))
             batch_loss = 0.0
-            batch_correct = 0
+            batch_correct = 0.0
+            epoch_loss = 0.0
+            epoch_correct = 0
             for batch_idx, data in enumerate(tqdm(dataloader), 1):
-                x = data["input"]["flow"]
+                x = data["input"]
                 y = data["label"]
 
                 try:
@@ -131,24 +178,106 @@ class CreateModel(object):
                     batch_loss += loss.item()
                     batch_correct += pred.eq(y.view_as(pred)).sum().item()
 
-                    if batch_idx % 500 == 0:
-                        print("Batch %d, Train Loss: %.4f, Train ACC: %.4f" %
-                              (batch_idx, batch_loss / (4 * batch_idx), 100 * batch_correct / (4 * batch_idx)))
+                    epoch_loss += loss.item()
+                    epoch_correct += pred.eq(y.view_as(pred)).sum().item()
+
+                    if batch_idx % display_freq == 0:
+                        print("Batch %d, Training Loss: %.4f, Training ACC: %.4f" % (
+                            batch_idx,
+                            batch_loss / (dataloader.batch_size * display_freq),
+                            100 * batch_correct / (dataloader.batch_size * display_freq)))
+                        batch_loss = 0.0
+                        batch_correct = 0.0
+                        if model_path:
+                            self.save_model(model_dir=model_dir, model_name=model_name)
                 except Exception as e:
                     print(e)
                     pass
 
-            epoch_loss = batch_loss / dataloader.__len__()
-            epoch_correct = 100 * batch_correct / dataloader.__len__()
-            print("Training  Loss: %.4f,  Correct %.4f" % (epoch_loss, epoch_correct))
+            epoch_loss = epoch_loss / (dataloader.__len__() * dataloader.batch_size)
+            epoch_acc = 100 * epoch_correct / (dataloader.__len__() * dataloader.batch_size)
+            print("Training Loss: %.4f,  Training ACC %.4f%%" % (epoch_loss, epoch_acc))
 
-    def test(self, x, y, use_gpu=True):
+            if model_path:
+                self.save_model(model_dir=model_dir, model_name=model_name)
+
+    def test(self, dataloader, device):
         self.model.eval()
 
-        if use_gpu:
-            x, y = torch.autograd.Variable(x.cuda()), torch.autograd.Variable(y.cuda())
+        loss = 0.0
+        correct = 0
+        for batch_idx, data in enumerate(tqdm(dataloader), 1):
+            x = data["input"]
+            y = data["label"]
+
+            if batch_idx == 500:
+                print("Test Loss: %.4f, Test ACC: %.4f%%" % (
+                    loss / (500 * dataloader.batch_size),
+                    100 * correct / (500 * dataloader.batch_size)))
+
+            try:
+                x, y = x.to(device, dtype=torch.float32), y.to(device)
+
+                output = self.model(x)
+
+                # get the index of the max log-probability
+                pred = output.max(1, keepdim=True)[1]
+
+                loss += self.loss_func(output, y).item()
+                correct += pred.eq(y.view_as(pred)).sum().item()
+            except Exception as e:
+                print(e)
+
+        print("Test Loss: %.4f, Test ACC: %.4f%%" % (
+            loss / (dataloader.__len__() * dataloader.batch_size),
+            100 * correct / (dataloader.__len__() * dataloader.batch_size)))
+
+    def save_model(self, model_dir, model_name=None, entire_model=True):
+        """
+        function used to save model(state_dict mode just complete and without testing)
+        Notice that the load_state_dict() function takes a dictionary object, NOT a path to a saved object.
+        This means that you must deserialize the saved state_dict before you pass it to the load_state_dict() function.
+        For example, you CANNOT load using model.load_state_dict(PATH).
+        :param model:
+        :param model_dir:
+        :param model_name:
+        :param entire_model:
+        :return:
+        """
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+
+        if entire_model:
+            # Save Entire Model
+            torch.save(self.model, os.path.join(model_dir, model_name))
         else:
-            x, y = torch.autograd.Variable(x), torch.autograd.Variable(y)
+            # for inference
+            # Notice that the load_state_dict() function takes a dictionary object
+            torch.save(self.model.state_dict(), model_dir)
+
+    def load_model(self, TheModelClass, model_path, entire_model=True, *args, **kwargs):
+        """
+        function used to load model(state_dict mode just complete and without testing)
+        Notice that the load_state_dict() function takes a dictionary object, NOT a path to a saved object.
+        This means that you must deserialize the saved state_dict before you pass it to the load_state_dict() function.
+        For example, you CANNOT load using model.load_state_dict(PATH).
+
+        :param TheModelClass:
+        :param model_path:
+        :param entire_model:
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        if entire_model:
+            # Load Entire Model
+            model = torch.load(model_path)
+            self.model = model
+        else:
+            # for inference
+            model = TheModelClass(*args, **kwargs)
+            model.load_state_dict(torch.load(model_path))
+            self.model = model
 
 
 """"

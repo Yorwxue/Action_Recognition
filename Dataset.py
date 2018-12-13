@@ -15,15 +15,29 @@ class Dataset(object):
 
 
 class UCF101(Dataset):
-    def __init__(self, training=False, cross_valid="01", download=False):
+    def __init__(self, training=True, cross_valid="01", sample_num=10, download=False, img_rows=299, img_cols=299):
+        """
+
+        :param training:
+        :param cross_valid:
+        :param sample_num:
+        :param download:
+        :param img_rows: for VGG, image size should be 224*224, but for inception, it should be 299*299
+        :param img_cols: as aforementioned
+        """
         super(UCF101, self).__init__()
 
         self.data_dir = os.path.abspath("dataset")
         self.video_dir = os.path.abspath(os.path.join("dataset", "UCF-101"))
-        self.img_rows = 224
-        self.img_cols = 224
+
+        self.train = training
+
+        # for VGG, image size should be 224*224, but for inception, it should be 299*299
+        self.img_rows = img_rows
+        self.img_cols = img_cols
+
         self.num_label = 101
-        self.sample_num = 10
+        self.sample_num = sample_num
         self.random_sample_key = 666
         # self.transform = transform
 
@@ -32,28 +46,41 @@ class UCF101(Dataset):
 
         with open(os.path.join(self.data_dir, "ucfTrainTestlist", "trainlist%s.txt" % cross_valid), 'r') as fr:
             self.train_list = fr.readlines()
-        if training:
-            with open(os.path.join(self.data_dir, "ucfTrainTestlist", "testlist%s.txt" % cross_valid), 'r') as fr:
-                self.test_list = fr.readlines()
+
+        with open(os.path.join(self.data_dir, "ucfTrainTestlist", "testlist%s.txt" % cross_valid), 'r') as fr:
+            self.test_list = fr.readlines()
+
+        with open(os.path.join(self.data_dir, "ucfTrainTestlist", "classInd.txt"), 'r') as fr:
+            classInd_txt = fr.readlines()
+            self.classInd = dict()
+            for line in classInd_txt:
+                class_id, class_name = line.replace('\n', '').split(' ')
+                self.classInd[class_name] = class_id
+                self.classInd[class_id] = class_name
 
     def __len__(self):
-        return len(self.train_list)
+        if self.train:
+            return len(self.train_list)
+        else:
+            return len(self.test_list)
 
     def __getitem__(self, index):
-        video_path = os.path.join(self.video_dir, self.train_list[index].split(' ')[0])
-        label = int(self.train_list[index].split(' ')[-1]) - 1  # start from 0
+        if self.train:
+            video_path = os.path.join(self.video_dir, self.train_list[index].split(' ')[0])
+            label = int(self.train_list[index].split(' ')[-1]) - 1  # start from 0
 
-        # one-hot encoding
-        # onehot_label = np.zeros(self.num_label)
-        # onehot_label[label] = 1
-        # label = {
-        #     "class-id": label,
-        #     "one-hot": onehot_label
-        # }
+            sample = {'input': self.get_input_data(video_path), 'label': label}
+        else:
+            video_path = os.path.join(self.video_dir, self.test_list[index].replace('\n', '').split(' ')[0])
+            class_name = self.test_list[index].split('/')[0]
+            label = int(self.classInd[class_name])
 
-        sample = {'input': self.get_input_data(video_path), 'label': label}
+            sample = {'input': self.get_input_data(video_path), 'label': label}
 
         return sample
+
+    def training(self, training):
+        self.train = training
 
     def get_input_data(self, video_path):
         """
@@ -64,18 +91,39 @@ class UCF101(Dataset):
         :return:
         """
         raw_frames = get_frames(video_path, self.img_rows, self.img_cols)
-        optical_frames = create_optical_flow(raw_frames)
 
-        # if self.transform:
-        #     sample = self.transform(sample)
-        optical_frames["orig"] = [np.transpose(optical_frame, (2, 0, 1)) for optical_frame in optical_frames["orig"]]
+        # video
+        """
+        # optical flow
+        optical_frames = create_optical_flow(raw_frames)
 
         # random sample
         for keys in optical_frames.keys():
+            # random sample
             optical_frames[keys] = random_sample(optical_frames[keys], N=self.sample_num, seed=self.random_sample_key)
-            optical_frames[keys] = un_roll_timestep(optical_frames[keys]) --------------------------------------------------------------non-implemented
 
+            # list to ndarray
+            optical_frames[keys] = np.asarray(optical_frames[keys])
+
+            # un-rolled time steps
+            optical_frames[keys] = self.un_rolled_timestep(optical_frames[keys])
+
+        # channel last-> channel first
+        optical_frames["orig"] = np.transpose(optical_frames["orig"], (2, 0, 1))
+        optical_frames["flow"] = np.transpose(optical_frames["flow"], (2, 0, 1))
         input_data = optical_frames
+        # """
+
+        # image
+        # """
+        # random choose one frame from video
+        frames = random_sample(raw_frames, N=self.sample_num, seed=self.random_sample_key)[0]
+
+        # channel last-> channel first
+        frames = np.transpose(frames, (2, 0, 1))
+
+        input_data = normalize(frames)
+        # """
 
         return input_data
 
@@ -96,6 +144,28 @@ class UCF101(Dataset):
         print(filepath)
         print(outdir)
         patoolib.extract_archive(filepath, outdir=outdir)
+
+    def un_rolled_timestep(self, frames):
+        """
+        spread time steps as channels
+        :param frames:
+        :return:
+        """
+        assert frames.ndim in [3, 4]
+
+        if frames.ndim == 3:
+            frames = np.reshape(frames, (frames.shape[0], frames.shape[1], frames.shape[2], 1))
+        frames = np.transpose(frames, (1, 2, 3, 0))
+        un_rolled_set = np.reshape(
+            frames,
+            (self.img_rows, self.img_cols, frames.shape[-2]*frames.shape[-1])
+        )
+        return un_rolled_set
+
+
+def normalize(frames):
+        normalized_frames = frames/255
+        return normalized_frames
 
 
 def get_frames(video_path, resize_img_rows, resize_img_cols):
@@ -131,6 +201,66 @@ def get_frames(video_path, resize_img_rows, resize_img_cols):
 
         frame = cv2.resize(frame, (resize_img_rows, resize_img_cols))
 
+        frames.append(frame)
+
+    # When everything done, release the video capture object
+    cap.release()
+
+    # Closes all the frames
+    cv2.destroyAllWindows()
+
+    return frames
+
+
+def get_specific_frames(video_path, resize_img_rows, resize_img_cols, specific="random", N=1):
+    """
+    transform video to series of frames
+    :param specific:
+        (1) if specific="random", randomly choose frames
+        (2) specific=[1, 10, 30] to get the 1th, 10th and 30th frames. if this video ths less than 30 frames, it will
+            return only 1th and 10th frames
+    :param N: return how many frames. if number of specific frames less than "N", this function will randomly choose
+              several frames to meeting the "num" parameter
+    :return: a series of images
+    """
+    frames = list()
+
+    # Create a VideoCapture object and read from input file
+    # If the input is taken from the camera, pass 0 instead of the video file name.
+    cap = cv2.VideoCapture(video_path)
+
+    # Check if camera opened successfully
+    if (cap.isOpened() == False):
+        print("Error opening video stream or file")
+        exit()
+
+    # more detail of propId can be find in https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html
+    # propId 7: Number of frames in the video file
+    nb_frame = cap.get(propId=7)
+
+    # check specific length
+    if specific == "random":
+        specific_list = random.shuffle(np.arange(nb_frame))[:N]
+    else:
+        # check specific no
+        for idx, specific_no in enumerate(specific):
+            if specific_no > nb_frame:
+                np.delete(specific, idx)
+
+        # meeting the parameter "N"
+        if len(specific) < N:
+            specific_list = random.shuffle(np.delete(np.arange(nb_frame), specific, None))[:N-len(specific)]
+        elif len(specific) > N:
+            specific_list = specific[:N]
+        else:
+            specific_list = specific
+
+    for specific_no in specific_list:
+        # moving the "frame reader" to the offset of the specific frame
+        cap.set(1, specific_no)
+
+        ret, frame = cap.read()
+        frame = cv2.resize(frame, (resize_img_rows, resize_img_cols))
         frames.append(frame)
 
     # When everything done, release the video capture object
