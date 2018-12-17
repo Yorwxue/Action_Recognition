@@ -1,4 +1,5 @@
 import os
+import json
 import patoolib
 import numpy as np
 import random
@@ -27,8 +28,8 @@ class UCF101(Dataset):
         """
         super(UCF101, self).__init__()
 
-        self.data_dir = os.path.abspath("dataset")
-        self.video_dir = os.path.abspath(os.path.join("dataset", "UCF-101"))
+        self.data_dir = os.path.abspath(os.path.join("dataset", "UCF101"))
+        self.video_dir = os.path.abspath(os.path.join("dataset", "UCF101", "UCF-101"))
 
         self.train = training
 
@@ -133,12 +134,155 @@ class UCF101(Dataset):
         # get video
         os.system("wget http://crcv.ucf.edu/data/UCF101/UCF101.rar")
         os.system("mv UCF101.rar %s" % self.data_dir)
-        self.unzip(os.path.abspath("dataset/UCF101.rar"), self.data_dir)
+        self.unzip(os.path.abspath(os.path.join(self.data_dir, "UCF101.rar")), self.data_dir)
 
         # get train/test Splits
         os.system("wget http://crcv.ucf.edu/data/UCF101/UCF101TrainTestSplits-RecognitionTask.zip")
         os.system("mv UCF101TrainTestSplits-RecognitionTask.zip %s" % self.data_dir)
         self.unzip(os.path.join(self.data_dir, "UCF101TrainTestSplits-RecognitionTask.zip"), self.data_dir)
+
+    def unzip(self, filepath, outdir='.'):
+        print(filepath)
+        print(outdir)
+        patoolib.extract_archive(filepath, outdir=outdir)
+
+    def un_rolled_timestep(self, frames):
+        """
+        spread time steps as channels
+        :param frames:
+        :return:
+        """
+        assert frames.ndim in [3, 4]
+
+        if frames.ndim == 3:
+            frames = np.reshape(frames, (frames.shape[0], frames.shape[1], frames.shape[2], 1))
+        frames = np.transpose(frames, (1, 2, 3, 0))
+        un_rolled_set = np.reshape(
+            frames,
+            (self.img_rows, self.img_cols, frames.shape[-2]*frames.shape[-1])
+        )
+        return un_rolled_set
+
+
+class kinetic(Dataset):
+    def __init__(self, training=True, sample_num=10, download=False, img_rows=299, img_cols=299):
+        """
+
+        :param training:
+        :param cross_valid:
+        :param sample_num:
+        :param download:
+        :param img_rows: for VGG, image size should be 224*224, but for inception, it should be 299*299
+        :param img_cols: as aforementioned
+        """
+        super(kinetic, self).__init__()
+
+        self.data_dir = os.path.abspath(os.path.join("dataset", "kinetics"))
+        self.video_dir = os.path.abspath(os.path.join("dataset", "kinetics", "video"))
+
+        self.train = training
+
+        # for VGG, image size should be 224*224, but for inception, it should be 299*299
+        self.img_rows = img_rows
+        self.img_cols = img_cols
+
+        self.num_label = 101
+        self.sample_num = sample_num
+        self.random_sample_key = 666
+        # self.transform = transform
+
+        if download:
+            self.download()
+
+        # -------------------------------------------------------------------------------------------------------------------------
+        with open(os.path.join(self.data_dir, "kinetics_train.json"), 'r') as fr:
+            self.train_list = json.load(fr)
+        pass
+
+    def __len__(self):
+        if self.train:
+            return len(self.train_list)
+        else:
+            return len(self.test_list)
+
+    def __getitem__(self, index):
+        if self.train:
+            video_path = os.path.join(self.video_dir, self.train_list[index].split(' ')[0])
+            label = int(self.train_list[index].split(' ')[-1]) - 1  # start from 0
+
+            sample = {'input': self.get_input_data(video_path), 'label': label}
+        else:
+            video_path = os.path.join(self.video_dir, self.test_list[index].replace('\n', ''))
+            class_name = self.test_list[index].split('/')[0]
+            label = int(self.classInd[class_name]) - 1  # start from 0
+
+            sample = {'input': self.get_input_data(video_path), 'label': label}
+
+        return sample
+
+    def training(self, training):
+        self.train = training
+
+    def get_input_data(self, video_path):
+        """
+        doing same preprocessing, like optical flow, and transform raw data into pytorch format
+        ex:
+        For a conv2D in pytorch, input should be in (N, C, H, W) format. N is the number of samples/batch_size. C is the channels. H and W are height and width resp.
+        :param video_path:
+        :return:
+        """
+        raw_frames = get_frames(video_path, self.img_rows, self.img_cols)
+
+        # video
+        """
+        # optical flow
+        optical_frames = create_optical_flow(raw_frames)
+
+        # random sample
+        for keys in optical_frames.keys():
+            # random sample
+            optical_frames[keys] = random_sample(optical_frames[keys], N=self.sample_num, seed=self.random_sample_key)
+
+            # list to ndarray
+            optical_frames[keys] = np.asarray(optical_frames[keys])
+
+            # un-rolled time steps
+            optical_frames[keys] = self.un_rolled_timestep(optical_frames[keys])
+
+        # channel last-> channel first
+        optical_frames["orig"] = np.transpose(optical_frames["orig"], (2, 0, 1))
+        optical_frames["flow"] = np.transpose(optical_frames["flow"], (2, 0, 1))
+        input_data = optical_frames
+        # """
+
+        # image
+        # """
+        # random choose one frame from video
+        frames = random_sample(raw_frames, N=self.sample_num, seed=self.random_sample_key)[0]
+
+        # channel last-> channel first
+        frames = np.transpose(frames, (2, 0, 1))
+
+        input_data = normalize(frames)
+        # """
+
+        return input_data
+
+    def download(self):
+        if not os.path.exists("dataset"):
+            os.makedirs("dataset")
+
+        # get dataset url
+        os.system("wget 'https://deepmind.com/documents/193/kinetics_600_train (1).zip'")
+        os.system("wget 'https://deepmind.com/documents/194/kinetics_600_val (1).zip'")
+        os.system("wget 'https://deepmind.com/documents/231/kinetics_600_holdout_test.zip'")
+        os.system("wget 'https://deepmind.com/documents/232/kinetics_600_test (2).zip'")
+        os.system("wget 'https://deepmind.com/documents/197/kinetics_600_readme (1).txt'")
+        os.system("mv kinetics_* %s" % self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_train (1).zip"), self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_val (1).zip"), self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_holdout_test.zip"), self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_test (2).zip"), self.data_dir)
 
     def unzip(self, filepath, outdir='.'):
         print(filepath)
@@ -356,9 +500,9 @@ def draw_flow(img, flow, step=16):
     return vis
 
 
-"""
+# """
 if __name__ == "__main__":
-    from torch.utils.data import DataLoader
+    # from torch.utils.data import DataLoader
     
     # video_path = os.path.join(os.path.abspath("dataset"), "UCF-101", "Archery", "v_Archery_g01_c01.avi")
     # raw_frames = get_frames(video_path)
@@ -371,8 +515,10 @@ if __name__ == "__main__":
     #     cv2.imshow('frame', draw_flow(frames['gray'][idx], frame_flow))
     #     cv2.waitKey(100)
 
-    ucf101_dataset = UCF101()
-    dataloader = DataLoader(ucf101_dataset, batch_size=2, shuffle=True, num_workers=2)
-    for batch_idx, sample_batched in enumerate(dataloader):
-        print(batch_idx, sample_batched['input'].size(), sample_batched['label'].size())
-"""
+    # ucf101_dataset = UCF101()
+    # dataloader = DataLoader(ucf101_dataset, batch_size=2, shuffle=True, num_workers=2)
+    # for batch_idx, sample_batched in enumerate(dataloader):
+    #     print(batch_idx, sample_batched['input'].size(), sample_batched['label'].size())
+
+    kinetic_dataset = kinetic()
+# """

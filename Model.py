@@ -85,7 +85,7 @@ class VGG16(torch.nn.Module):
 
 
 class InceptionV3(torch.nn.Module):
-    def __init__(self, num_labels, pretrained):
+    def __init__(self, num_labels, pretrained, in_channels):
         """
 
         :param num_labels: number of classes
@@ -94,7 +94,7 @@ class InceptionV3(torch.nn.Module):
         """
         super(InceptionV3, self).__init__()
 
-        self.module = models.inception_v3(pretrained=pretrained)
+        self.module = models.inception_v3(pretrained=pretrained, channel=in_channels)
 
         # freeze several layers
         for parma in self.module.parameters():
@@ -110,16 +110,16 @@ class InceptionV3(torch.nn.Module):
 
 
 class CreateModel(object):
-    def __init__(self, device, num_labels, in_channels=3):
+    def __init__(self, device, num_labels, in_channels=3, pretrained=False):
         # vgg16 model(model for image)
         """
         self.model = VGG16(num_labels=num_labels, pretrained=True)
         self.optim_params = self.model.module.classifier.parameters()
         # """
 
-        # inception model(model for image)
+        # inception model(model for image or video)
         # """
-        self.model = InceptionV3(num_labels=num_labels, pretrained=True)
+        self.model = InceptionV3(num_labels=num_labels, pretrained=pretrained, in_channels=in_channels)
         self.optim_params = self.model.module.fc.parameters()
         # """
 
