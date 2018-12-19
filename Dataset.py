@@ -1,5 +1,5 @@
 import os
-import json
+import glob
 import patoolib
 import numpy as np
 import random
@@ -173,8 +173,7 @@ class UCF101(Dataset):
 class kinetic(Dataset):
     def __init__(self, training=True, sample_num=10, download=False, img_rows=299, img_cols=299):
         """
-        download function isn't complete, should cooperate with kinetics-downloader which can be accessed to
-        https://github.com/Showmax/kinetics-downloader.git
+        
         :param training:
         :param cross_valid:
         :param sample_num:
@@ -202,13 +201,19 @@ class kinetic(Dataset):
             num_jobs = 5
             self.download(num_jobs)
 
-        # ------------------------------------------------------------------------------------------------------------------------- not completed
-
-        with open(os.path.join(self.data_dir, "kinetics_train.json"), 'r') as fr:
-            self.train_list = json.load(fr)
-        with open(os.path.join(self.data_dir, "kinetics_600_test.json"), 'r') as fr:
-            self.test_list = json.load(fr)
-        pass
+        # get data list
+        # drop the first row which is description of each column.
+        with open(os.path.join(self.data_dir, "data", "kinetics-600_train.csv"), 'r') as fr:
+            self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
+        with open(os.path.join(self.data_dir, "data", "kinetics-600_test.csv"), 'r') as fr:
+            self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
+	with open(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), 'r') as fr:
+            self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
+        with open(os.path.join(self.data_dir, "data", "kinetics-600_classes_list"), 'r') as fr:
+            classes_list = fr.readlines()
+	    self.classId = dict()
+	    for idx, line in enumerate(classes_list):
+                self.classId[line.replace('\n', '')] = idx
 
     def __len__(self):
         if self.train:
@@ -218,14 +223,17 @@ class kinetic(Dataset):
 
     def __getitem__(self, index):
         if self.train:
-            video_path = os.path.join(self.video_dir, self.train_list[index].split(' ')[0])
-            label = int(self.train_list[index].split(' ')[-1]) - 1  # start from 0
+	    label = self.train_list[index][0]
+	    youtube_id = self.train_list[index][1]
+            video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "train", label, youtube_id))[0]  # glob should return only one result, due to youtube id is unique.
+            label = int(self.classId[label])
 
             sample = {'input': self.get_input_data(video_path), 'label': label}
         else:
-            video_path = os.path.join(self.video_dir, self.test_list[index].replace('\n', ''))
-            class_name = self.test_list[index].split('/')[0]
-            label = int(self.classInd[class_name]) - 1  # start from 0
+            label = self.test_list[index][0]
+            youtube_id = self.test_list[index][1]
+            video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "test", label, youtube_id))[0]  # glob should return o$
+            label = int(self.classId[label])
 
             sample = {'input': self.get_input_data(video_path), 'label': label}
 
@@ -286,6 +294,9 @@ class kinetic(Dataset):
         return input_data
 
     def download(self, num_jobs):
+        """ 
+        youtube-dl and ffmpeg is necessary.
+        """
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
 
