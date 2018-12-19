@@ -207,13 +207,13 @@ class kinetic(Dataset):
             self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
         with open(os.path.join(self.data_dir, "data", "kinetics-600_test.csv"), 'r') as fr:
             self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
-	with open(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), 'r') as fr:
-            self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
+        with open(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), 'r') as fr:
+                self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
         with open(os.path.join(self.data_dir, "data", "kinetics-600_classes_list"), 'r') as fr:
             classes_list = fr.readlines()
-	    self.classId = dict()
-	    for idx, line in enumerate(classes_list):
-                self.classId[line.replace('\n', '')] = idx
+            self.classId = dict()
+            for idx, line in enumerate(classes_list):
+                    self.classId[line.replace('\n', '')] = idx
 
     def __len__(self):
         if self.train:
@@ -223,8 +223,8 @@ class kinetic(Dataset):
 
     def __getitem__(self, index):
         if self.train:
-	    label = self.train_list[index][0]
-	    youtube_id = self.train_list[index][1]
+            label = self.train_list[index][0]
+            youtube_id = self.train_list[index][1]
             video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "train", label, youtube_id))[0]  # glob should return only one result, due to youtube id is unique.
             label = int(self.classId[label])
 
