@@ -94,31 +94,37 @@ class UCF101(Dataset):
         raw_frames = get_frames(video_path, self.img_rows, self.img_cols)
 
         # video
-        """
+        # """
+        # Randomly cut a episode from video
+        raw_frames = random_cut(raw_frames)
+
         # optical flow
         optical_frames = create_optical_flow(raw_frames)
 
         # random sample
         for keys in optical_frames.keys():
-            # random sample
-            optical_frames[keys] = random_sample(optical_frames[keys], N=self.sample_num, seed=self.random_sample_key)
-
             # list to ndarray
             optical_frames[keys] = np.asarray(optical_frames[keys])
 
-            # un-rolled time steps
-            optical_frames[keys] = self.un_rolled_timestep(optical_frames[keys])
+        # get the middle frame
+        optical_frames["orig"] = optical_frames["orig"][int(optical_frames["orig"].shape[0] / 2)]
+
+        # un-rolled time steps
+        optical_frames["flow"] = self.un_rolled_timestep(optical_frames["flow"])
 
         # channel last-> channel first
         optical_frames["orig"] = np.transpose(optical_frames["orig"], (2, 0, 1))
         optical_frames["flow"] = np.transpose(optical_frames["flow"], (2, 0, 1))
-        input_data = optical_frames
+        input_data = {
+            "Spatial": optical_frames["orig"],
+            "Temporal": optical_frames["flow"]
+        }
         # """
 
         # image
-        # """
+        """
         # random choose one frame from video
-        frames = random_sample(raw_frames, N=self.sample_num, seed=self.random_sample_key)[0]
+        frames = random_sample(raw_frames, N=1, seed=self.random_sample_key)[0]
 
         # channel last-> channel first
         frames = np.transpose(frames, (2, 0, 1))
@@ -129,8 +135,8 @@ class UCF101(Dataset):
         return input_data
 
     def download(self):
-        if not os.path.exists("dataset"):
-            os.makedirs("dataset")
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
         # get video
         os.system("wget http://crcv.ucf.edu/data/UCF101/UCF101.rar")
         os.system("mv UCF101.rar %s" % self.data_dir)
@@ -167,7 +173,8 @@ class UCF101(Dataset):
 class kinetic(Dataset):
     def __init__(self, training=True, sample_num=10, download=False, img_rows=299, img_cols=299):
         """
-
+        download function isn't complete, should cooperate with kinetics-downloader which can be accessed to
+        https://github.com/Showmax/kinetics-downloader.git
         :param training:
         :param cross_valid:
         :param sample_num:
@@ -177,8 +184,8 @@ class kinetic(Dataset):
         """
         super(kinetic, self).__init__()
 
-        self.data_dir = os.path.abspath(os.path.join("dataset", "kinetics"))
-        self.video_dir = os.path.abspath(os.path.join("dataset", "kinetics", "video"))
+        self.data_dir = os.path.abspath(os.path.join("dataset", "ActivityNet", "Crawler", "Kinetics"))
+        self.video_dir = os.path.abspath(os.path.join("dataset", "ActivityNet", "Crawler", "Kinetics", "dataset"))
 
         self.train = training
 
@@ -192,11 +199,15 @@ class kinetic(Dataset):
         # self.transform = transform
 
         if download:
-            self.download()
+            num_jobs = 5
+            self.download(num_jobs)
 
-        # -------------------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------------------- not completed
+
         with open(os.path.join(self.data_dir, "kinetics_train.json"), 'r') as fr:
             self.train_list = json.load(fr)
+        with open(os.path.join(self.data_dir, "kinetics_600_test.json"), 'r') as fr:
+            self.test_list = json.load(fr)
         pass
 
     def __len__(self):
@@ -235,24 +246,30 @@ class kinetic(Dataset):
 
         # video
         """
+        # Randomly cut a episode from video
+        raw_frames = random_cut(raw_frames)
+
         # optical flow
         optical_frames = create_optical_flow(raw_frames)
 
         # random sample
         for keys in optical_frames.keys():
-            # random sample
-            optical_frames[keys] = random_sample(optical_frames[keys], N=self.sample_num, seed=self.random_sample_key)
-
             # list to ndarray
             optical_frames[keys] = np.asarray(optical_frames[keys])
 
-            # un-rolled time steps
-            optical_frames[keys] = self.un_rolled_timestep(optical_frames[keys])
+        # get the middle frame
+        optical_frames["orig"] = optical_frames["orig"][int(optical_frames["orig"].shape[0] / 2)]
+
+        # un-rolled time steps
+        optical_frames["flow"] = self.un_rolled_timestep(optical_frames["flow"])
 
         # channel last-> channel first
         optical_frames["orig"] = np.transpose(optical_frames["orig"], (2, 0, 1))
         optical_frames["flow"] = np.transpose(optical_frames["flow"], (2, 0, 1))
-        input_data = optical_frames
+        input_data = {
+            "Spatial": optical_frames["orig"],
+            "Temporal": optical_frames["flow"]
+        }
         # """
 
         # image
@@ -268,21 +285,46 @@ class kinetic(Dataset):
 
         return input_data
 
-    def download(self):
-        if not os.path.exists("dataset"):
-            os.makedirs("dataset")
+    def download(self, num_jobs):
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
 
         # get dataset url
-        os.system("wget 'https://deepmind.com/documents/193/kinetics_600_train (1).zip'")
-        os.system("wget 'https://deepmind.com/documents/194/kinetics_600_val (1).zip'")
-        os.system("wget 'https://deepmind.com/documents/231/kinetics_600_holdout_test.zip'")
-        os.system("wget 'https://deepmind.com/documents/232/kinetics_600_test (2).zip'")
-        os.system("wget 'https://deepmind.com/documents/197/kinetics_600_readme (1).txt'")
-        os.system("mv kinetics_* %s" % self.data_dir)
-        self.unzip(os.path.join(self.data_dir, "kinetics_600_train (1).zip"), self.data_dir)
-        self.unzip(os.path.join(self.data_dir, "kinetics_600_val (1).zip"), self.data_dir)
-        self.unzip(os.path.join(self.data_dir, "kinetics_600_holdout_test.zip"), self.data_dir)
-        self.unzip(os.path.join(self.data_dir, "kinetics_600_test (2).zip"), self.data_dir)
+        # os.system("wget 'https://deepmind.com/documents/193/kinetics_600_train (1).zip'")
+        # os.system("wget 'https://deepmind.com/documents/194/kinetics_600_val (1).zip'")
+        # os.system("wget 'https://deepmind.com/documents/231/kinetics_600_holdout_test.zip'")
+        # os.system("wget 'https://deepmind.com/documents/232/kinetics_600_test (2).zip'")
+        # os.system("wget 'https://deepmind.com/documents/197/kinetics_600_readme (1).txt'")
+        # os.system("mv kinetics_* %s" % self.data_dir)
+        # self.unzip(os.path.join(self.data_dir, "kinetics_600_train (1).zip"), self.data_dir)
+        # self.unzip(os.path.join(self.data_dir, "kinetics_600_val (1).zip"), self.data_dir)
+        # self.unzip(os.path.join(self.data_dir, "kinetics_600_holdout_test.zip"), self.data_dir)
+        # self.unzip(os.path.join(self.data_dir, "kinetics_600_test (2).zip"), self.data_dir)
+
+        os.system("git clone https://github.com/activitynet/ActivityNet.git")
+        import time
+        while not os.path.exists(os.path.join(self.data_dir, "data", "kinetics-600_train.csv")):
+            time.sleep(1)  # waiting for git clone
+        os.system("mv ActivityNet dataset")
+        if not os.path.exists(self.video_dir):
+            os.makedirs(self.video_dir)
+
+        # os.system("python %s %s %s" % (
+        #     os.path.join(self.data_dir, "download.py"),
+        #     os.path.join(self.data_dir, "data", "kinetics-600_test.csv"),
+        #     self.video_dir
+        # ))
+        from dataset.ActivityNet.Crawler.Kinetics.download import main as downloader
+        downloader(os.path.join(self.data_dir, "data", "kinetics-600_train.csv"), self.video_dir,
+                   trim_format='%06d', num_jobs=num_jobs, tmp_dir='/tmp/kinetics',
+                   drop_duplicates='non-existent')
+        downloader(os.path.join(self.data_dir, "data", "kinetics-600_test.csv"), self.video_dir,
+                   trim_format='%06d', num_jobs=num_jobs, tmp_dir='/tmp/kinetics',
+                   drop_duplicates='non-existent')
+        downloader(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), self.video_dir,
+                   trim_format='%06d', num_jobs=num_jobs, tmp_dir='/tmp/kinetics',
+                   drop_duplicates='non-existent')
+
 
     def unzip(self, filepath, outdir='.'):
         print(filepath)
@@ -414,6 +456,21 @@ def get_specific_frames(video_path, resize_img_rows, resize_img_cols, specific="
     cv2.destroyAllWindows()
 
     return frames
+
+
+def random_cut(frames, N=10):
+    """
+    Randomly cut a episode from video
+    :param frames:
+    :param N:
+    :param seed:
+    :return:
+    """
+    nb_frame = len(frames)
+
+    start_point = np.random.randint(0, nb_frame - N)
+
+    return frames[start_point:(start_point+N)]
 
 
 def random_sample(frames, N=10, seed=None):

@@ -7,6 +7,19 @@ from tqdm import tqdm
 from non_local_block.dot_product import NONLocalBlock2D
 
 
+class BasicConv2d(torch.nn.Module):
+
+    def __init__(self, in_channels, out_channels, **kwargs):
+        super(BasicConv2d, self).__init__()
+        self.conv = torch.nn.Conv2d(in_channels, out_channels, bias=False, **kwargs)
+        self.bn = torch.nn.BatchNorm2d(out_channels, eps=0.001)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return torch.nn.functional.relu(x, inplace=True)
+
+
 class TestNet(torch.nn.Module):
     def __init__(self):
         super(TestNet, self).__init__()
@@ -94,7 +107,7 @@ class InceptionV3(torch.nn.Module):
         """
         super(InceptionV3, self).__init__()
 
-        self.module = models.inception_v3(pretrained=pretrained, channel=in_channels)
+        self.module = models.inception_v3(pretrained=pretrained)
 
         # freeze several layers
         for parma in self.module.parameters():
@@ -104,16 +117,20 @@ class InceptionV3(torch.nn.Module):
         self.module.aux_logits = False
         self.module.fc = torch.nn.Linear(self.module.fc.in_features, num_labels)
 
+        # replace the first layer
+        if in_channels != 3:
+            self.module.Conv2d_1a_3x3 = BasicConv2d(in_channels, 32, kernel_size=3, stride=2)
+
     def forward(self, x):
         x = self.module(x)
         return x
 
 
 class CreateModel(object):
-    def __init__(self, device, num_labels, in_channels=3, pretrained=False):
+    def __init__(self, device, num_labels, in_channels=3, pretrained=True):
         # vgg16 model(model for image)
         """
-        self.model = VGG16(num_labels=num_labels, pretrained=True)
+        self.model = VGG16(num_labels=num_labels, pretrained=pretrained)
         self.optim_params = self.model.module.classifier.parameters()
         # """
 
@@ -157,7 +174,7 @@ class CreateModel(object):
             epoch_loss = 0.0
             epoch_correct = 0
             for batch_idx, data in enumerate(tqdm(dataloader), 1):
-                x = data["input"]
+                x = data["input"]["Temporal"]
                 y = data["label"]
 
                 try:
