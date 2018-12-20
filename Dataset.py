@@ -183,8 +183,8 @@ class kinetic(Dataset):
         """
         super(kinetic, self).__init__()
 
-        self.data_dir = os.path.abspath(os.path.join("dataset", "Kinetics"))
-        self.video_dir = os.path.abspath(os.path.join("dataset", "Kinetics", "dataset"))
+        self.data_dir = os.path.abspath(os.path.join("dataset", "kinetics"))
+        self.video_dir = os.path.abspath(os.path.join("dataset", "kinetics", "dataset"))
 
         self.train = training
 
