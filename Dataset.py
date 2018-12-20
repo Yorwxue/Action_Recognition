@@ -202,21 +202,12 @@ class kinetic(Dataset):
 
         # get data list
         # drop the first row which is description of each column.
-        # --------------------------------------------------------------------------------------------------------------
-        # with open(os.path.join(self.data_dir, "kinetics-600_train.csv"), 'r') as fr:
-        #     self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
-        # with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
-        #     self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
-        # with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
-    #         self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
-        # --------------------------------------------------------------------------------------------------------------
-        # Note due to training dataset hasn't download, using testing data as training, and validation as testing
-        with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
+        with open(os.path.join(self.data_dir, "kinetics-600_train.csv"), 'r') as fr:
             self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
-        with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
+        with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
             self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
-        # --------------------------------------------------------------------------------------------------------------
-
+        with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
+            self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
 
         # classes list
         classes_list = sorted(os.listdir(os.path.join(self.video_dir, "train")))
