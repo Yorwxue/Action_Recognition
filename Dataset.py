@@ -4,7 +4,6 @@ import patoolib
 import numpy as np
 import random
 import cv2
-from skimage import io, transform
 
 
 class Dataset(object):
@@ -183,8 +182,8 @@ class kinetic(Dataset):
         """
         super(kinetic, self).__init__()
 
-        self.data_dir = os.path.abspath(os.path.join("dataset", "ActivityNet", "Crawler", "Kinetics"))
-        self.video_dir = os.path.abspath(os.path.join("dataset", "ActivityNet", "Crawler", "Kinetics", "dataset"))
+        self.data_dir = os.path.abspath(os.path.join("dataset", "Kinetics"))
+        self.video_dir = os.path.abspath(os.path.join("dataset", "Kinetics", "dataset"))
 
         self.train = training
 
@@ -198,8 +197,7 @@ class kinetic(Dataset):
         # self.transform = transform
 
         if download:
-            num_jobs = 5
-            self.download(num_jobs)
+            self.download(num_jobs=40)
 
         # get data list
         # drop the first row which is description of each column.
@@ -294,48 +292,248 @@ class kinetic(Dataset):
         return input_data
 
     def download(self, num_jobs):
-        """ 
-        youtube-dl and ffmpeg is necessary.
         """
+        (1) function getting from https://github.com/activitynet/ActivityNet
+        (2) youtube-dl and ffmpeg is necessary.
+        (3) it may need to run in python2
+        """
+        import glob
+        import json
+        import shutil
+        import subprocess
+        import uuid
+        from collections import OrderedDict
+
+        from joblib import delayed
+        from joblib import Parallel
+        import pandas as pd
+
+        def create_video_folders(dataset, output_dir, tmp_dir):
+            """Creates a directory for each label name in the dataset."""
+            if 'label-name' not in dataset.columns:
+                this_dir = os.path.join(output_dir, 'test')
+                if not os.path.exists(this_dir):
+                    os.makedirs(this_dir)
+                # I should return a dict but ...
+                return this_dir
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            if not os.path.exists(tmp_dir):
+                os.makedirs(tmp_dir)
+
+            label_to_dir = {}
+            for label_name in dataset['label-name'].unique():
+                this_dir = os.path.join(output_dir, label_name)
+                if not os.path.exists(this_dir):
+                    os.makedirs(this_dir)
+                label_to_dir[label_name] = this_dir
+            return label_to_dir
+
+        def construct_video_filename(row, label_to_dir, trim_format='%06d'):
+            """Given a dataset row, this function constructs the
+               output filename for a given video.
+            """
+            basename = '%s_%s_%s.mp4' % (row['video-id'],
+                                         trim_format % row['start-time'],
+                                         trim_format % row['end-time'])
+            if not isinstance(label_to_dir, dict):
+                dirname = label_to_dir
+            else:
+                dirname = label_to_dir[row['label-name']]
+            output_filename = os.path.join(dirname, basename)
+            return output_filename
+
+        def download_clip(video_identifier, output_filename,
+                          start_time, end_time,
+                          tmp_dir='/tmp/kinetics',
+                          num_attempts=5,
+                          url_base='https://www.youtube.com/watch?v='):
+            """Download a video from youtube if exists and is not blocked.
+            arguments:
+            ---------
+            video_identifier: str
+                Unique YouTube video identifier (11 characters)
+            output_filename: str
+                File path where the video will be stored.
+            start_time: float
+                Indicates the begining time in seconds from where the video
+                will be trimmed.
+            end_time: float
+                Indicates the ending time in seconds of the trimmed video.
+            """
+            # Defensive argument checking.
+            assert isinstance(video_identifier, str), 'video_identifier must be string'
+            assert isinstance(output_filename, str), 'output_filename must be string'
+            assert len(video_identifier) == 11, 'video_identifier must have length 11'
+
+            status = False
+            # Construct command line for getting the direct video link.
+            tmp_filename = os.path.join(tmp_dir,
+                                        '%s.%%(ext)s' % uuid.uuid4())
+            command = ['youtube-dl',
+                       '--quiet', '--no-warnings',
+                       '-f', 'mp4',
+                       '-o', '"%s"' % tmp_filename,
+                       '"%s"' % (url_base + video_identifier)]
+            command = ' '.join(command)
+            attempts = 0
+            while True:
+                try:
+                    output = subprocess.check_output(command, shell=True,
+                                                     stderr=subprocess.STDOUT)
+                except subprocess.CalledProcessError as err:
+                    attempts += 1
+                    if attempts == num_attempts:
+                        return status, err.output
+                else:
+                    break
+
+            tmp_filename = glob.glob('%s*' % tmp_filename.split('.')[0])[0]
+            # Construct command to trim the videos (ffmpeg required).
+            command = ['ffmpeg',
+                       '-i', '"%s"' % tmp_filename,
+                       '-ss', str(start_time),
+                       '-t', str(end_time - start_time),
+                       '-c:v', 'libx264', '-c:a', 'copy',
+                       '-threads', '1',
+                       '-loglevel', 'panic',
+                       '"%s"' % output_filename]
+            command = ' '.join(command)
+            try:
+                output = subprocess.check_output(command, shell=True,
+                                                 stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as err:
+                return status, err.output
+
+            # Check if the video was successfully saved.
+            status = os.path.exists(output_filename)
+            os.remove(tmp_filename)
+            return status, 'Downloaded'
+
+        def download_clip_wrapper(row, label_to_dir, trim_format, tmp_dir):
+            """Wrapper for parallel processing purposes."""
+            output_filename = construct_video_filename(row, label_to_dir,
+                                                       trim_format)
+            clip_id = os.path.basename(output_filename).split('.mp4')[0]
+            if os.path.exists(output_filename):
+                status = tuple([clip_id, True, 'Exists'])
+                return status
+
+            downloaded, log = download_clip(row['video-id'], output_filename,
+                                            row['start-time'], row['end-time'],
+                                            tmp_dir=tmp_dir)
+            status = tuple([clip_id, downloaded, log])
+            return status
+
+        def parse_kinetics_annotations(input_csv, ignore_is_cc=False):
+            """Returns a parsed DataFrame.
+            arguments:
+            ---------
+            input_csv: str
+                Path to CSV file containing the following columns:
+                  'YouTube Identifier,Start time,End time,Class label'
+            returns:
+            -------
+            dataset: DataFrame
+                Pandas with the following columns:
+                    'video-id', 'start-time', 'end-time', 'label-name'
+            """
+            df = pd.read_csv(input_csv)
+            if 'youtube_id' in df.columns:
+                columns = OrderedDict([
+                    ('youtube_id', 'video-id'),
+                    ('time_start', 'start-time'),
+                    ('time_end', 'end-time'),
+                    ('label', 'label-name')])
+                df.rename(columns=columns, inplace=True)
+                if ignore_is_cc:
+                    df = df.loc[:, df.columns.tolist()[:-1]]
+            return df
+
+        def download_process(input_csv, output_dir,
+                             trim_format='%06d', num_jobs=4, tmp_dir='/tmp/kinetics',
+                             drop_duplicates=False):
+
+            # Reading and parsing Kinetics.
+            dataset = parse_kinetics_annotations(input_csv)
+            # if os.path.isfile(drop_duplicates):
+            #     print('Attempt to remove duplicates')
+            #     old_dataset = parse_kinetics_annotations(drop_duplicates,
+            #                                              ignore_is_cc=True)
+            #     df = pd.concat([dataset, old_dataset], axis=0, ignore_index=True)
+            #     df.drop_duplicates(inplace=True, keep=False)
+            #     print(dataset.shape, old_dataset.shape)
+            #     dataset = df
+            #     print(dataset.shape)
+
+            # Creates folders where videos will be saved later.
+            label_to_dir = create_video_folders(dataset, output_dir, tmp_dir)
+
+            # Download all clips.
+            if num_jobs == 1:
+                status_lst = []
+                for i, row in dataset.iterrows():
+                    status_lst.append(download_clip_wrapper(row, label_to_dir,
+                                                            trim_format, tmp_dir))
+            else:
+                status_lst = Parallel(n_jobs=num_jobs)(delayed(download_clip_wrapper)(
+                    row, label_to_dir,
+                    trim_format, tmp_dir) for i, row in dataset.iterrows())
+
+            # Clean tmp dir.
+            shutil.rmtree(tmp_dir)
+
+            # Save download report.
+            with open('download_report.json', 'w') as fobj:
+                fobj.write(json.dumps(status_lst))
+
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
+        if not os.path.exists(os.path.join(self.video_dir, "train")):
+            os.makedirs(os.path.join(self.video_dir, "train"))
+        if not os.path.exists(os.path.join(self.video_dir, "val")):
+            os.makedirs(os.path.join(self.video_dir, "val"))
+        if not os.path.exists(os.path.join(self.video_dir, "test")):
+            os.makedirs(os.path.join(self.video_dir, "test"))
 
         # get dataset url
-        # os.system("wget 'https://deepmind.com/documents/193/kinetics_600_train (1).zip'")
-        # os.system("wget 'https://deepmind.com/documents/194/kinetics_600_val (1).zip'")
-        # os.system("wget 'https://deepmind.com/documents/231/kinetics_600_holdout_test.zip'")
-        # os.system("wget 'https://deepmind.com/documents/232/kinetics_600_test (2).zip'")
-        # os.system("wget 'https://deepmind.com/documents/197/kinetics_600_readme (1).txt'")
-        # os.system("mv kinetics_* %s" % self.data_dir)
-        # self.unzip(os.path.join(self.data_dir, "kinetics_600_train (1).zip"), self.data_dir)
-        # self.unzip(os.path.join(self.data_dir, "kinetics_600_val (1).zip"), self.data_dir)
+        os.system("wget 'https://deepmind.com/documents/193/kinetics_600_train (1).zip'")
+        os.system("wget 'https://deepmind.com/documents/194/kinetics_600_val (1).zip'")
+        # os.system("wget 'https://deepmind.com/documents/231/kinetics_600_holdout_test.zip'")  # this dataset doesn't be labelled
+        os.system("wget 'https://deepmind.com/documents/232/kinetics_600_test (2).zip'")
+        os.system("mv kinetics_* %s" % self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_train (1).zip"), self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_val (1).zip"), self.data_dir)
         # self.unzip(os.path.join(self.data_dir, "kinetics_600_holdout_test.zip"), self.data_dir)
-        # self.unzip(os.path.join(self.data_dir, "kinetics_600_test (2).zip"), self.data_dir)
+        self.unzip(os.path.join(self.data_dir, "kinetics_600_test (2).zip"), self.data_dir)
 
-        os.system("git clone https://github.com/activitynet/ActivityNet.git")
-        import time
-        while not os.path.exists(os.path.join(self.data_dir, "data", "kinetics-600_train.csv")):
-            time.sleep(1)  # waiting for git clone
-        os.system("mv ActivityNet dataset")
-        if not os.path.exists(self.video_dir):
-            os.makedirs(self.video_dir)
+        # rename
+        os.system("mv kinetics_train.csv kinetics-600_train.csv")
+        os.system("rm kinetics_train.json")
+        os.system("mv kinetics_val.csv kinetics-600_val.csv")
+        os.system("rm kinetics_val.json")
+        # os.system("mv kinetics_600_holdout_test.csv kinetics-600_holdout_test.csv")
+        # os.system("rm kinetics_600_holdout_test.json")
+        os.system("mv kinetics_600_test.csv kinetics-600_test.csv")
+        os.system("rm kinetics_600_test.json")
 
-        # os.system("python %s %s %s" % (
-        #     os.path.join(self.data_dir, "download.py"),
-        #     os.path.join(self.data_dir, "data", "kinetics-600_test.csv"),
-        #     self.video_dir
-        # ))
-        from dataset.ActivityNet.Crawler.Kinetics.download import main as downloader
-        downloader(os.path.join(self.data_dir, "data", "kinetics-600_train.csv"), self.video_dir,
-                   trim_format='%06d', num_jobs=num_jobs, tmp_dir='/tmp/kinetics',
-                   drop_duplicates='non-existent')
-        downloader(os.path.join(self.data_dir, "data", "kinetics-600_test.csv"), self.video_dir,
-                   trim_format='%06d', num_jobs=num_jobs, tmp_dir='/tmp/kinetics',
-                   drop_duplicates='non-existent')
-        downloader(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), self.video_dir,
-                   trim_format='%06d', num_jobs=num_jobs, tmp_dir='/tmp/kinetics',
-                   drop_duplicates='non-existent')
+        # classes name from paper
+        with open(os.path.join(self.data_dir, "kinetics-600_classes_list"), 'w') as fw:
+            fw.write("acting in play,adjusting glasses,alligator wrestling,archaeological excavation,arguing,assembling bicycle,attending conference,backflip (human),base jumping,bathing dog,battle rope training,blowdrying hair,blowing bubble gum,bodysurfing,bottling,bouncing on bouncy castle,breaking boards,breathing fire,building lego,building sandcastle,bull fighting,bulldozing,burping,calculating,calligraphy,capsizing,card stacking,card throwing,carving ice,casting fishing line,changing gear in car,changing wheel (not on bike),chewing gum,chiseling stone,chiseling wood,chopping meat,chopping vegetables,clam digging,coloring in,combing hair,contorting,cooking sausages (not on barbeque),cooking scallops,cosplaying,cracking back,cracking knuckles,crossing eyes,cumbia,curling (sport),cutting apple,cutting orange,delivering mail,directing traffic,docking boat,doing jigsaw puzzle,drooling,dumpster diving,dyeing eyebrows,dyeing hair,embroidering,falling off bike,falling off chair,fencing (sport),fidgeting,fixing bicycle,flint knapping,fly tying,geocaching,getting a piercing,gold panning,gospel singing in church,hand washing clothes,head stand,historical reenactment,home roasting coffee,huddling,hugging (not baby),hugging baby,ice swimming,inflating balloons,installing carpet,ironing hair,jaywalking,jumping bicycle,jumping jacks,karaoke,land sailing,lawn mower racing,laying concrete,laying stone,laying tiles,leatherworking,licking,lifting hat,lighting fire,lock picking,longboarding,looking at phone,luge,making balloon shapes,making bubbles,making cheese,making horseshoes,making paper aeroplanes,making the bed,marriage proposal,massaging neck,moon walking,mosh pit dancing,mountain climber (exercise),mushroom foraging,needle felting,opening bottle (not wine),opening door,opening refrigerator,opening wine bottle,packing,passing american football (not in game),passing soccer ball,person collecting garbage,photobombing,photocopying,pillow fight,pinching,pirouetting,planing wood,playing beer pong,playing blackjack,playing darts,playing dominoes,playing field hockey,playing gong,playing hand clapping games,playing laser tag,playing lute,playing maracas,playing marbles,playing netball,playing ocarina,playing pan pipes,playing pinball,playing ping pong,playing polo,playing rubiks cube,playing scrabble,playing with trains,poking bellybutton,polishing metal,popping balloons,pouring beer,preparing salad,pushing wheelbarrow,putting in contact lenses,putting on eyeliner,putting on foundation,putting on lipstick,putting on mascara,putting on sari,putting on shoes,raising eyebrows,repairing puncture,riding snow blower,roasting marshmallows,roasting pig,rolling pastry,rope pushdown,sausage making,sawing wood,scrapbooking,scrubbing face,separating eggs,sewing,shaping bread dough,shining flashlight,shopping,shucking oysters,shuffling feet,sipping cup,skiing mono,skipping stone,sleeping,smashing,smelling feet,smoking pipe,spelunking,square dancing,standing on hands,staring,steer roping,sucking lolly,swimming front crawl,swinging baseball bat,sword swallowing,tackling,tagging graffiti,talking on cell phone,tasting wine,threading needle,throwing ball (not baseball or American football),throwing knife,throwing snowballs,throwing tantrum,throwing water balloon,tie dying,tightrope walking,tiptoeing,trimming shrubs,twiddling fingers,tying necktie,tying shoe laces,using a microscope,using a paint roller,using a power drill,using a sledge hammer,using a wrench,using atm,using bagging machine,using circular saw,using inhaler,using puppets,vacuuming floor,visiting the zoo,wading through mud,wading through water,waking up,walking through snow,watching tv,waving hand,weaving fabric,winking,wood burning (art),yarn spinning")
 
+        print("download dataset(this may cost about 0.7~0.9TB totally)")
+
+        decision = input("Download validation data will spent lots of time, sure? y/n")
+        if decision == 'y' or decision == 'Y':
+            download_process(input_csv=os.path.join(self.data_dir, "kinetics-600_val.csv"), output_dir=os.path.join(self.video_dir, "val"), num_jobs=num_jobs)
+
+        decision = input("Download testing data will spent lots of time, sure? y/n")
+        if decision == 'y' or decision == 'Y':
+            download_process(input_csv=os.path.join(self.data_dir, "kinetics-600_test.csv"), output_dir=os.path.join(self.video_dir, "test"), num_jobs=num_jobs)
+
+        decision = input("Download training data will spent lots of time, sure? y/n")
+        if decision == 'y' or decision == 'Y':
+            download_process(input_csv=os.path.join(self.data_dir, "kinetics-600_train.csv"), output_dir=os.path.join(self.video_dir, "train"), num_jobs=num_jobs)
 
     def unzip(self, filepath, outdir='.'):
         print(filepath)
