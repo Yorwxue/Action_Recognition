@@ -170,13 +170,14 @@ class UCF101(Dataset):
 
 
 class kinetic(Dataset):
-    def __init__(self, training=True, sample_num=10, download=False, img_rows=299, img_cols=299):
+    def __init__(self, training=True, sample_num=10, download=False, num_jobs=40, img_rows=299, img_cols=299):
         """
         
         :param training:
         :param cross_valid:
         :param sample_num:
         :param download:
+        :param num_jobs: number of threads to download data
         :param img_rows: for VGG, image size should be 224*224, but for inception, it should be 299*299
         :param img_cols: as aforementioned
         """
@@ -197,21 +198,31 @@ class kinetic(Dataset):
         # self.transform = transform
 
         if download:
-            self.download(num_jobs=40)
+            self.download(num_jobs=num_jobs)
 
         # get data list
         # drop the first row which is description of each column.
-        with open(os.path.join(self.data_dir, "data", "kinetics-600_train.csv"), 'r') as fr:
-            self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # --------------------------------------------------------------------------------------------------------------
+        # with open(os.path.join(self.data_dir, "data", "kinetics-600_train.csv"), 'r') as fr:
+        #     self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # with open(os.path.join(self.data_dir, "data", "kinetics-600_test.csv"), 'r') as fr:
+        #     self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # with open(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), 'r') as fr:
+    #         self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # --------------------------------------------------------------------------------------------------------------
+        # Note due to training dataset hasn't download, using testing data as training, and validation as testing
         with open(os.path.join(self.data_dir, "data", "kinetics-600_test.csv"), 'r') as fr:
-            self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
+            self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
         with open(os.path.join(self.data_dir, "data", "kinetics-600_val.csv"), 'r') as fr:
-                self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
-        with open(os.path.join(self.data_dir, "data", "kinetics-600_classes_list"), 'r') as fr:
-            classes_list = fr.readlines()
-            self.classId = dict()
-            for idx, line in enumerate(classes_list):
-                    self.classId[line.replace('\n', '')] = idx
+            self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # --------------------------------------------------------------------------------------------------------------
+
+
+        # classes list
+        classes_list = sorted(os.listdir(os.path.join(self.video_dir, "train")))
+        self.classId = dict()
+        for idx, class_id in enumerate(classes_list):
+                self.classId[class_id] = idx
 
     def __len__(self):
         if self.train:
@@ -230,7 +241,7 @@ class kinetic(Dataset):
         else:
             label = self.test_list[index][0]
             youtube_id = self.test_list[index][1]
-            video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "test", label, youtube_id))[0]  # glob should return o$
+            video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "test", label, youtube_id))[0]
             label = int(self.classId[label])
 
             sample = {'input': self.get_input_data(video_path), 'label': label}
@@ -517,10 +528,6 @@ class kinetic(Dataset):
         os.system("mv kinetics_600_test.csv kinetics-600_test.csv")
         os.system("rm kinetics_600_test.json")
 
-        # classes name from paper
-        with open(os.path.join(self.data_dir, "kinetics-600_classes_list"), 'w') as fw:
-            fw.write("acting in play,adjusting glasses,alligator wrestling,archaeological excavation,arguing,assembling bicycle,attending conference,backflip (human),base jumping,bathing dog,battle rope training,blowdrying hair,blowing bubble gum,bodysurfing,bottling,bouncing on bouncy castle,breaking boards,breathing fire,building lego,building sandcastle,bull fighting,bulldozing,burping,calculating,calligraphy,capsizing,card stacking,card throwing,carving ice,casting fishing line,changing gear in car,changing wheel (not on bike),chewing gum,chiseling stone,chiseling wood,chopping meat,chopping vegetables,clam digging,coloring in,combing hair,contorting,cooking sausages (not on barbeque),cooking scallops,cosplaying,cracking back,cracking knuckles,crossing eyes,cumbia,curling (sport),cutting apple,cutting orange,delivering mail,directing traffic,docking boat,doing jigsaw puzzle,drooling,dumpster diving,dyeing eyebrows,dyeing hair,embroidering,falling off bike,falling off chair,fencing (sport),fidgeting,fixing bicycle,flint knapping,fly tying,geocaching,getting a piercing,gold panning,gospel singing in church,hand washing clothes,head stand,historical reenactment,home roasting coffee,huddling,hugging (not baby),hugging baby,ice swimming,inflating balloons,installing carpet,ironing hair,jaywalking,jumping bicycle,jumping jacks,karaoke,land sailing,lawn mower racing,laying concrete,laying stone,laying tiles,leatherworking,licking,lifting hat,lighting fire,lock picking,longboarding,looking at phone,luge,making balloon shapes,making bubbles,making cheese,making horseshoes,making paper aeroplanes,making the bed,marriage proposal,massaging neck,moon walking,mosh pit dancing,mountain climber (exercise),mushroom foraging,needle felting,opening bottle (not wine),opening door,opening refrigerator,opening wine bottle,packing,passing american football (not in game),passing soccer ball,person collecting garbage,photobombing,photocopying,pillow fight,pinching,pirouetting,planing wood,playing beer pong,playing blackjack,playing darts,playing dominoes,playing field hockey,playing gong,playing hand clapping games,playing laser tag,playing lute,playing maracas,playing marbles,playing netball,playing ocarina,playing pan pipes,playing pinball,playing ping pong,playing polo,playing rubiks cube,playing scrabble,playing with trains,poking bellybutton,polishing metal,popping balloons,pouring beer,preparing salad,pushing wheelbarrow,putting in contact lenses,putting on eyeliner,putting on foundation,putting on lipstick,putting on mascara,putting on sari,putting on shoes,raising eyebrows,repairing puncture,riding snow blower,roasting marshmallows,roasting pig,rolling pastry,rope pushdown,sausage making,sawing wood,scrapbooking,scrubbing face,separating eggs,sewing,shaping bread dough,shining flashlight,shopping,shucking oysters,shuffling feet,sipping cup,skiing mono,skipping stone,sleeping,smashing,smelling feet,smoking pipe,spelunking,square dancing,standing on hands,staring,steer roping,sucking lolly,swimming front crawl,swinging baseball bat,sword swallowing,tackling,tagging graffiti,talking on cell phone,tasting wine,threading needle,throwing ball (not baseball or American football),throwing knife,throwing snowballs,throwing tantrum,throwing water balloon,tie dying,tightrope walking,tiptoeing,trimming shrubs,twiddling fingers,tying necktie,tying shoe laces,using a microscope,using a paint roller,using a power drill,using a sledge hammer,using a wrench,using atm,using bagging machine,using circular saw,using inhaler,using puppets,vacuuming floor,visiting the zoo,wading through mud,wading through water,waking up,walking through snow,watching tv,waving hand,weaving fabric,winking,wood burning (art),yarn spinning")
-
         print("download dataset(this may cost about 0.7~0.9TB totally)")
 
         decision = input("Download validation data will spent lots of time, sure? y/n")
@@ -766,7 +773,7 @@ def draw_flow(img, flow, step=16):
     return vis
 
 
-# """
+"""
 if __name__ == "__main__":
     # from torch.utils.data import DataLoader
     
