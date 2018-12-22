@@ -502,8 +502,8 @@ class kinetic(Dataset):
             os.makedirs(self.data_dir)
         if not os.path.exists(os.path.join(self.video_dir, "train")):
             os.makedirs(os.path.join(self.video_dir, "train"))
-        if not os.path.exists(os.path.join(self.video_dir, "val")):
-            os.makedirs(os.path.join(self.video_dir, "val"))
+        if not os.path.exists(os.path.join(self.video_dir, "test")):  # I'm  merge the test and val directory accidentially...
+            os.makedirs(os.path.join(self.video_dir, "test"))
         if not os.path.exists(os.path.join(self.video_dir, "test")):
             os.makedirs(os.path.join(self.video_dir, "test"))
 
