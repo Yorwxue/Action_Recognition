@@ -203,26 +203,26 @@ class kinetic(Dataset):
         # get data list
         # drop the first row which is description of each column.
         # --------------------------------------------------------------------------------------------------------------
-        # with open(os.path.join(self.data_dir, "kinetics-600_train.csv"), 'r') as fr:
-        #     self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
-        # with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
-        #     self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
-        # with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
-    #         self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
+        with open(os.path.join(self.data_dir, "kinetics-600_train.csv"), 'r') as fr:
+            self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
+        with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
+            self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
+        with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
+            self.val_list = [line.split(',') for line in (fr.readlines()[1:])]
         # --------------------------------------------------------------------------------------------------------------
         # Note due to training dataset hasn't download, using testing data as training, and validation as testing
-        with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
-            self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
-        with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
-            self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # with open(os.path.join(self.data_dir, "kinetics-600_test.csv"), 'r') as fr:
+        #     self.train_list = [line.split(',') for line in (fr.readlines()[1:])]
+        # with open(os.path.join(self.data_dir, "kinetics-600_val.csv"), 'r') as fr:
+        #     self.test_list = [line.split(',') for line in (fr.readlines()[1:])]
         # --------------------------------------------------------------------------------------------------------------
-
 
         # classes list
         classes_list = sorted(os.listdir(os.path.join(self.video_dir, "train")))
         self.classId = dict()
         for idx, class_id in enumerate(classes_list):
                 self.classId[class_id] = idx
+        pass
 
     def __len__(self):
         if self.train:
@@ -584,7 +584,7 @@ def get_frames(video_path, resize_img_rows, resize_img_cols):
 
     # Check if camera opened successfully
     if (cap.isOpened() == False):
-        print("Error opening video stream or file")
+        print("Error opening video stream or file ; %s" % video_path)
         exit()
 
     # more detail of propId can be find in https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html
