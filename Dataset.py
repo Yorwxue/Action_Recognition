@@ -231,18 +231,6 @@ class kinetics(Dataset):
             return len(self.test_list)
 
     def __getitem__(self, index):
-        try:
-            return super(kinetics, self).__getitem__(index)
-        except Exception as e:
-            label = self.train_list[index][0]
-            youtube_id = self.train_list[index][1]
-            video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "train", label, youtube_id))[0]
-            print("Exception:")
-            print("label: %s" % label)
-            print("youtube_id: %s" % youtube_id)
-            print("video path: %s" % video_path)
-            print('\n')
-
         if self.train:
             label = self.train_list[index][0]
             youtube_id = self.train_list[index][1]
@@ -259,10 +247,6 @@ class kinetics(Dataset):
             sample = {'input': self.get_input_data(video_path), 'label': label}
 
         return sample
-
-    def data_collate(batch):
-        batch = filter (lambda x:x is not None, batch)
-        return default_collate(batch)
 
     def training(self, training):
         self.train = training
@@ -579,6 +563,11 @@ class kinetics(Dataset):
             (self.img_rows, self.img_cols, frames.shape[-2]*frames.shape[-1])
         )
         return un_rolled_set
+
+
+def data_collate(batch):
+    batch = filter (lambda x:x is not None, batch)
+    return default_collate(batch)
 
 
 def normalize(frames):
