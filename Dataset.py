@@ -4,7 +4,7 @@ import patoolib
 import numpy as np
 import random
 import cv2
-
+from torch.utils.data.dataloader import default_collate
 
 class Dataset(object):
     def __getitem__(self, index):
@@ -169,7 +169,7 @@ class UCF101(Dataset):
         return un_rolled_set
 
 
-class kinetic(Dataset):
+class kinetics(Dataset):
     def __init__(self, training=True, sample_num=10, download=False, num_jobs=40, img_rows=299, img_cols=299):
         """
         
@@ -181,7 +181,7 @@ class kinetic(Dataset):
         :param img_rows: for VGG, image size should be 224*224, but for inception, it should be 299*299
         :param img_cols: as aforementioned
         """
-        super(kinetic, self).__init__()
+        super(kinetics, self).__init__()
 
         self.data_dir = os.path.abspath(os.path.join("dataset", "kinetics"))
         self.video_dir = os.path.abspath(os.path.join("dataset", "kinetics", "dataset"))
@@ -231,6 +231,11 @@ class kinetic(Dataset):
             return len(self.test_list)
 
     def __getitem__(self, index):
+        try:
+            return super(kinetics, self).__getitem__(index)
+        except Exception as e:
+            print(e)
+
         if self.train:
             label = self.train_list[index][0]
             youtube_id = self.train_list[index][1]
@@ -247,6 +252,10 @@ class kinetic(Dataset):
             sample = {'input': self.get_input_data(video_path), 'label': label}
 
         return sample
+
+    def data_collate(batch):
+        batch = filter (lambda x:x is not None, batch)
+        return default_collate(batch)
 
     def training(self, training):
         self.train = training
@@ -793,5 +802,5 @@ if __name__ == "__main__":
     # for batch_idx, sample_batched in enumerate(dataloader):
     #     print(batch_idx, sample_batched['input'].size(), sample_batched['label'].size())
 
-    kinetic_dataset = kinetic()
+     kinetic_dataset = kinetic()
 # """
