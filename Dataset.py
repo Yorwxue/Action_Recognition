@@ -234,7 +234,14 @@ class kinetics(Dataset):
         try:
             return super(kinetics, self).__getitem__(index)
         except Exception as e:
-            print(e)
+            label = self.train_list[index][0]
+            youtube_id = self.train_list[index][1]
+            video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "train", label, youtube_id))[0]
+            print("Exception:")
+            print("label: %s" % label)
+            print("youtube_id: %s" % youtube_id)
+            print("video path: %s" % video_path)
+            print('\n')
 
         if self.train:
             label = self.train_list[index][0]
