@@ -39,7 +39,7 @@ class Collated_kinetics(kinetics):
 kinetics_dataset = Collated_kinetics(sample_num=1)
 
 batch_size = 64
-num_workers = 0
+num_workers = 15
 
 use_cuda = True
 if use_cuda:
