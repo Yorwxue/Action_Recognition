@@ -174,8 +174,11 @@ class CreateModel(object):
             epoch_loss = 0.0
             epoch_correct = 0
             for batch_idx, data in enumerate(tqdm(dataloader), 1):
-                x = data["input"]["Temporal"]
-                y = data["label"]
+                try:
+                    x = data["input"]  # ["Temporal"]
+                    y = data["label"]
+                except Exception as e:
+                    pass
 
                 try:
                     x, y = x.to(device, dtype=torch.float32),  y.to(device)

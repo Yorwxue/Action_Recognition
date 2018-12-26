@@ -565,8 +565,22 @@ class kinetics(Dataset):
         return un_rolled_set
 
 
+def collate_func(data_path):
+    """
+    https://discuss.pytorch.org/t/questions-about-dataloader-and-dataset/806/4
+    """
+    if os.path.exists(data_path):
+        cap = cv2.VideoCapture(data_path)
+        if (cap.isOpened() == False):
+            return None
+        cap.release()
+        return data_path
+    else:
+        return None
+
+
 def data_collate(batch):
-    batch = filter (lambda x:x is not None, batch)
+    batch = list(filter(collate_func, batch))
     return default_collate(batch)
 
 
