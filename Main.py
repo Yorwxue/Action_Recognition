@@ -39,14 +39,14 @@ class Collated_kinetics(kinetics):
 kinetics_dataset = Collated_kinetics(sample_num=1)
 
 batch_size = 64
-num_workers = 20
+num_workers = 0
 
 use_cuda = True
 if use_cuda:
     torch.backends.cudnn.benchmark = False
     torch.cuda.empty_cache()
 
-device = torch.device("cuda:3" if use_cuda else "cpu")
+device = torch.device("cuda:0" if use_cuda else "cpu")
 
 print("---------- create model -----------")
 model = CreateModel(device, in_channels=3, num_labels=600)

@@ -4,6 +4,7 @@ import patoolib
 import numpy as np
 import random
 import cv2
+import warnings
 from torch.utils.data.dataloader import default_collate
 
 class Dataset(object):
@@ -237,14 +238,20 @@ class kinetics(Dataset):
             video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "train", label, youtube_id))[0]  # glob should return only one result, due to youtube id is unique.
             label = int(self.classId[label])
 
-            sample = {'input': self.get_input_data(video_path), 'label': label}
+            try:
+                sample = {'input': self.get_input_data(video_path), 'label': label}
+            except Exception as e:
+                sample = None
         else:
             label = self.test_list[index][0]
             youtube_id = self.test_list[index][1]
             video_path = glob.glob("%s_*" % os.path.join(self.video_dir, "test", label, youtube_id))[0]
             label = int(self.classId[label])
 
-            sample = {'input': self.get_input_data(video_path), 'label': label}
+            try:
+                sample = {'input': self.get_input_data(video_path), 'label': label}
+            except Exception as e:
+                sample = None
 
         return sample
 
@@ -259,6 +266,7 @@ class kinetics(Dataset):
         :param video_path:
         :return:
         """
+
         raw_frames = get_frames(video_path, self.img_rows, self.img_cols)
 
         # video
@@ -301,6 +309,7 @@ class kinetics(Dataset):
         # """
 
         return input_data
+
 
     def download(self, num_jobs):
         """
@@ -565,22 +574,24 @@ class kinetics(Dataset):
         return un_rolled_set
 
 
-def collate_func(data_path):
-    """
-    https://discuss.pytorch.org/t/questions-about-dataloader-and-dataset/806/4
-    """
-    if os.path.exists(data_path):
-        cap = cv2.VideoCapture(data_path)
-        if (cap.isOpened() == False):
-            return None
-        cap.release()
-        return data_path
-    else:
-        return None
+# def collate_func(data_path):
+#     if os.path.exists(data_path):
+#         cap = cv2.VideoCapture(data_path)
+#         if (cap.isOpened() == False):
+#             return None
+#         cap.release()
+#         return data_path
+#     else:
+#         return None
 
 
 def data_collate(batch):
-    batch = list(filter(collate_func, batch))
+    """
+    using to skip the broken data
+    more detail can be find in the following url:
+    https://discuss.pytorch.org/t/questions-about-dataloader-and-dataset/806/4
+    """
+    batch = list(filter(lambda x: x is not None, batch))
     return default_collate(batch)
 
 
@@ -603,8 +614,9 @@ def get_frames(video_path, resize_img_rows, resize_img_cols):
 
     # Check if camera opened successfully
     if (cap.isOpened() == False):
-        print("Error opening video stream or file ; %s" % video_path)
-        exit()
+        # print("Error opening video stream or file ; %s" % video_path)
+        cap.release()
+        assert False
 
     # more detail of propId can be find in https://docs.opencv.org/2.4/modules/highgui/doc/reading_and_writing_images_and_video.html
     # propId 7: Number of frames in the video file
