@@ -49,7 +49,7 @@ if use_cuda:
 device = torch.device("cuda:0" if use_cuda else "cpu")
 
 print("---------- create model -----------")
-model = CreateModel(device, in_channels=3, num_labels=600)
+model = CreateModel(device, in_channels=3, num_labels=600, pretrain_path=None)  # pretrain_path="./checkpoint/InceptionV3_UCF_Spatial.pt"
 #if use_cuda:
 #    model.model = torch.nn.DataParallel(model.model, device_ids=[2, 3])
 

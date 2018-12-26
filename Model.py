@@ -98,7 +98,7 @@ class VGG16(torch.nn.Module):
 
 
 class InceptionV3(torch.nn.Module):
-    def __init__(self, num_labels, pretrained, in_channels):
+    def __init__(self, num_labels, imagenet_pretrained, in_channels):
         """
 
         :param num_labels: number of classes
@@ -107,11 +107,11 @@ class InceptionV3(torch.nn.Module):
         """
         super(InceptionV3, self).__init__()
 
-        self.module = models.inception_v3(pretrained=pretrained)
+        self.module = models.inception_v3(pretrained=imagenet_pretrained)
 
         # freeze several layers
-        for parma in self.module.parameters():
-            parma.requires_grad = False
+        # for parma in self.module.parameters():
+        #     parma.requires_grad = False
 
         # replace the last layer
         self.module.aux_logits = False
@@ -127,27 +127,48 @@ class InceptionV3(torch.nn.Module):
 
 
 class CreateModel(object):
-    def __init__(self, device, num_labels, in_channels=3, pretrained=True):
+    def __init__(self, device, num_labels, in_channels=3, imagenet_pretrained=True, pretrain_path=None):
+        """
+
+        :param device:
+        :param num_labels:
+        :param in_channels:
+        :param imagenet_pretrained: pretrained by imagenet
+        :param pretrain_path: pretrained by our data, if pretrain_path not equal to "None", pretrained will set to False
+        """
+        if pretrain_path:
+            pretrained = False
+
         # vgg16 model(model for image)
         """
+        already not supported
         self.model = VGG16(num_labels=num_labels, pretrained=pretrained)
         self.optim_params = self.model.module.classifier.parameters()
         # """
 
         # inception model(model for image or video)
         # """
-        self.model = InceptionV3(num_labels=num_labels, pretrained=pretrained, in_channels=in_channels)
-        self.optim_params = self.model.module.fc.parameters()
+        self.model = InceptionV3(num_labels=num_labels,
+                                 imagenet_pretrained=imagenet_pretrained,
+                                 in_channels=in_channels)
+
+        if pretrain_path:
+            self.load_partial_model(pretrain_path)
+
+        # self.optim_params = self.model.module.fc.parameters()
+        self.optim_params = self.model.module.parameters()
         # """
 
         # small model for testing
         """
+        already not supported
         self.model = TestNet()
         self.optim_params = self.model.parameters()
         # """
 
         # Non-local Neural Network(model for video)
         """
+        already not supported
         self.model = NonLocalNetwork(in_channels=in_channels, num_labels=num_labels)
         self.optim_params = self.model.parameters()
         # """
@@ -155,6 +176,17 @@ class CreateModel(object):
         self.model = self.model.to(device)
         self.loss_func = torch.nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.optim_params)
+
+    def load_partial_model(self, pretrained_model_path):
+        pretrained_dict = torch.load(pretrained_model_path).state_dict()
+        model_dict = self.model.state_dict()
+
+        # 1. filter out unnecessary keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        # 2. overwrite entries in the existing state dict
+        model_dict.update(pretrained_dict)
+        # 3. load the new state dict
+        self.model.load_state_dict(pretrained_dict)
 
     def train(self, dataloader, device, num_epoch, display_freq, model_path=None):
         """
