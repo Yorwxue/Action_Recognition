@@ -94,7 +94,7 @@ class UCF101(Dataset):
         raw_frames = get_frames(video_path, self.img_rows, self.img_cols)
 
         # video
-        # """
+        """
         # Randomly cut a episode from video
         raw_frames = random_cut(raw_frames)
 
@@ -122,7 +122,7 @@ class UCF101(Dataset):
         # """
 
         # image
-        """
+        # """
         # random choose one frame from video
         frames = random_sample(raw_frames, N=1, seed=self.random_sample_key)[0]
 
