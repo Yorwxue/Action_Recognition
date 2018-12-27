@@ -137,7 +137,7 @@ class CreateModel(object):
         :param pretrain_path: pretrained by our data, if pretrain_path not equal to "None", pretrained will set to False
         """
         if pretrain_path:
-            pretrained = False
+            imagenet_pretrained = False
 
         # vgg16 model(model for image)
         """

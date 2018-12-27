@@ -25,28 +25,20 @@ class Collated_kinetics(kinetics):
         try:
             return super(Collated_kinetics, self).__getitem__(index)
         except Exception as e:
-            # print("Exception: Collating Fail")
-            # print("--------------------------")
-            # print(e)
-            # label = self.train_list[index][0]
-            # print("label: %s" % label)
-            # youtube_id = self.train_list[index][1]
-            # print("youtube_id: %s" % youtube_id)
-            # print("--------------------------\n")
             pass
 
 
 kinetics_dataset = Collated_kinetics(sample_num=1)
 
 batch_size = 64
-num_workers = 15
+num_workers = 0
 
 use_cuda = True
 if use_cuda:
     torch.backends.cudnn.benchmark = False
     torch.cuda.empty_cache()
 
-device = torch.device("cuda:0" if use_cuda else "cpu")
+device = torch.device("cuda" if use_cuda else "cpu")
 
 print("---------- create model -----------")
 model = CreateModel(device, in_channels=3, num_labels=600, pretrain_path=None)  # pretrain_path="./checkpoint/InceptionV3_UCF_Spatial.pt"
@@ -55,7 +47,7 @@ model = CreateModel(device, in_channels=3, num_labels=600, pretrain_path=None)  
 
 print("---------- train -------------")
 dataloader = DataLoader(kinetics_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, collate_fn=data_collate)
-model.train(dataloader, device, num_epoch=100, display_freq=5000, model_path=model_path)
+model.train(dataloader, device, num_epoch=100, display_freq=500, model_path=model_path)
 
 # test
 print("---------- test ------------")
