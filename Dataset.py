@@ -39,7 +39,7 @@ class UCF101(Dataset):
 
         self.num_label = 101
         self.sample_num = sample_num
-        self.random_sample_key = 666
+        self.random_sample_key = None
         # self.transform = transform
 
         if download:
